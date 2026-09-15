@@ -11,10 +11,12 @@ from dotenv import dotenv_values
 ROOT = Path(__file__).resolve().parent
 
 
+# Report invalid local settings without exposing secret values.
 class ConfigurationError(ValueError):
     """A user-actionable error that does not contain a secret value."""
 
 
+# Store validated database, rate-limit and encryption settings immutably.
 @dataclass(frozen=True)
 class Settings:
     db_path: Path
@@ -23,6 +25,7 @@ class Settings:
     data_key: str = field(repr=False)
 
 
+# Read and validate the explicit local dotenv file without system-secret fallback.
 def load_settings(env_file: Path = ROOT / ".env") -> Settings:
     env_file = env_file.resolve()
     if not env_file.is_file():

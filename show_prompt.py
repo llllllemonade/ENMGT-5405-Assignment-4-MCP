@@ -11,6 +11,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 
+# Retrieve and print the real MCP planning template for the requested daily budget.
 async def main(daily_hours: str):
     root = Path(__file__).resolve().parent
     params = StdioServerParameters(command=sys.executable,

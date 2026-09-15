@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 
 
+# Generate Claude Desktop configuration using this checkout's virtual environment.
 def main():
     root = Path(__file__).resolve().parent
     python = root / ".venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")

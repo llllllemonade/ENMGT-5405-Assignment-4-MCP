@@ -31,7 +31,10 @@ No sampling callback or remote model code was copied.
   Adaptation: an explicit `Path`, no system-secret fallback, no interpolation, and validation.
 - `init_local.py:initialize`, `task_manager.py:encrypt/decrypt`: Fernet API usage from
   https://cryptography.io/en/latest/fernet/ . Encryption itself is provided by the library.
-- `task_manager.py:add_assignment`: SQLite placeholder usage from
+- `task_manager.py:add_assignment/delete_assignment`: SQLite transaction behavior
+  from https://www.sqlite.org/lang_transaction.html . `BEGIN IMMEDIATE` protects
+  duplicate checking plus insertion, and targeted deletion, within write transactions.
+- `task_manager.py:add_assignment/delete_assignment`: SQLite placeholder usage from
   https://docs.python.org/3/library/sqlite3.html#sqlite3-placeholders .
 
 These are references to specific API patterns, not claims that complete files were

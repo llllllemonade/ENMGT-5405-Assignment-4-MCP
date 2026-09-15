@@ -7,6 +7,7 @@ from cryptography.fernet import Fernet
 from config import ROOT, load_settings
 
 
+# Create a local encryption key once or validate and preserve the existing key.
 def initialize(root: Path = ROOT) -> bool:
     target = root / ".env"
     if target.exists():

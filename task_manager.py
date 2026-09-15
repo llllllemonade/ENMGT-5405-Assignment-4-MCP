@@ -14,18 +14,35 @@ import time
 from cryptography.fernet import Fernet, InvalidToken
 
 
+# Identify invalid assignment or query inputs with a safe error message.
 class InputError(ValueError):
     """Invalid domain input, safe to explain to the caller."""
 
 
+# Report an identical assignment and retain its existing record ID.
+class DuplicateAssignmentError(ValueError):
+    # Store the matching assignment ID and construct a safe duplicate message.
+    def __init__(self, existing_id: int):
+        self.existing_id = existing_id
+        super().__init__(f"An identical assignment already exists with ID {existing_id}; nothing was added.")
+
+
+# Report that the requested assignment ID does not exist.
+class AssignmentNotFoundError(ValueError):
+    """The requested assignment ID does not exist."""
+
+
+# Signal that the current request window has no remaining capacity.
 class RateLimitError(ValueError):
     """The process-wide request budget has been exhausted."""
 
 
+# Report inaccessible or undecryptable stored assignment data.
 class StorageError(ValueError):
     """Stored data cannot be read with the configured key."""
 
 
+# Validate the exact date format and convert a real calendar date.
 def parse_date(value: str) -> date:
     if not isinstance(value, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
         raise InputError("Use the YYYY-MM-DD date format.")
@@ -35,6 +52,7 @@ def parse_date(value: str) -> date:
         raise InputError("This date does not exist; check the month, day and leap year.") from None
 
 
+# Trim bounded nonempty text and reject control characters.
 def clean_text(value: str, name: str, maximum: int) -> str:
     if not isinstance(value, str) or not 1 <= len(value.strip()) <= maximum:
         raise InputError(f"{name} must contain 1-{maximum} characters.")
@@ -43,6 +61,7 @@ def clean_text(value: str, name: str, maximum: int) -> str:
     return value.strip()
 
 
+# Validate finite numeric effort within the supported positive range.
 def positive_hours(value: float, maximum: float = 1000) -> float:
     if isinstance(value, bool) or not isinstance(value, (float, int)):
         raise InputError("Hours must be a number.")
@@ -55,9 +74,11 @@ def positive_hours(value: float, maximum: float = 1000) -> float:
     return float(value)
 
 
+# Enforce a thread-safe sliding-window budget for one server process.
 class RateLimiter:
     """Sliding window: accepted attempts count, even if input is later rejected."""
 
+    # Initialize the request window, injectable clock, timestamp queue and lock.
     def __init__(self, limit: int = 10, window: float = 60, clock=time.monotonic):
         if limit <= 0 or not math.isfinite(window) or window <= 0:
             raise ValueError("Rate limit and window must be positive.")
@@ -65,6 +86,7 @@ class RateLimiter:
         self.calls = deque()
         self.lock = threading.Lock()
 
+    # Expire old attempts and atomically reserve a slot or reject the request.
     def check(self) -> None:
         with self.lock:
             now = self.clock()
@@ -76,7 +98,9 @@ class RateLimiter:
             self.calls.append(now)
 
 
+# Coordinate assignment validation, encrypted storage and planning data.
 class TaskManager:
+    # Initialize the database schema and verify its encryption key in a transaction.
     def __init__(self, db_path: Path, cipher: Fernet, limiter=None, today=date.today):
         self.db_path, self.cipher = Path(db_path), cipher
         self.limiter = limiter if limiter is not None else RateLimiter()
@@ -100,28 +124,45 @@ class TaskManager:
             elif self.decrypt(row["value"]) != "course-task-manager-v1":
                 raise StorageError("Database key verification failed.")
 
+    # Open a SQLite connection that returns rows accessible by column name.
     def connect(self):
         conn = sqlite3.connect(self.db_path, timeout=5)
         conn.row_factory = sqlite3.Row
         return conn
 
+    # Encrypt UTF-8 assignment text into an authenticated Fernet token.
     def encrypt(self, value: str) -> str:
         # Adapted API usage (encrypt/decrypt), not a custom encryption algorithm:
         # https://cryptography.io/en/latest/fernet/
         return self.cipher.encrypt(value.encode("utf-8")).decode("ascii")
 
+    # Recover assignment text or raise a safe error when authentication fails.
     def decrypt(self, value: str) -> str:
         try:
             return self.cipher.decrypt(value.encode("ascii")).decode("utf-8")
         except (InvalidToken, UnicodeError):
             raise StorageError("Unable to decrypt stored data. Check the original .env key.") from None
 
+    # Validate and save one assignment while rejecting an identical existing record.
     def add_assignment(self, course: str, title: str, due_date: str, estimated_hours: float) -> dict:
         self.limiter.check()
         course = clean_text(course, "Course", 100)
         title = clean_text(title, "Title", 200)
         due, hours = parse_date(due_date), positive_hours(estimated_hours)
         with closing(self.connect()) as conn, conn:
+            # Hold the write transaction across comparison and insertion so
+            # simultaneous MCP processes cannot admit the same assignment twice.
+            # SQLite transaction semantics: https://www.sqlite.org/lang_transaction.html
+            conn.execute("BEGIN IMMEDIATE")
+            candidates = conn.execute(
+                "SELECT id, course, title FROM assignments WHERE due_date = ? AND estimated_hours = ? ORDER BY id",
+                (due.isoformat(), hours),
+            )
+            # Fernet uses randomized ciphertext: compare decrypted field values,
+            # not encrypted strings. Existing data needs no schema migration.
+            for candidate in candidates:
+                if self.decrypt(candidate["course"]) == course and self.decrypt(candidate["title"]) == title:
+                    raise DuplicateAssignmentError(candidate["id"])
             # Parameter binding follows Python's sqlite3 documentation:
             # https://docs.python.org/3/library/sqlite3.html#sqlite3-placeholders
             cursor = conn.execute(
@@ -132,6 +173,23 @@ class TaskManager:
         return {"ok": True, "assignment": {"id": assignment_id, "course": course,
                 "title": title, "due_date": due.isoformat(), "estimated_hours": hours}}
 
+    # Remove exactly one assignment by ID and return its decrypted details.
+    def delete_assignment(self, assignment_id: int) -> dict:
+        self.limiter.check()
+        if (isinstance(assignment_id, bool) or not isinstance(assignment_id, int)
+                or not 1 <= assignment_id <= 2**63 - 1):
+            raise InputError("assignment_id must be an integer between 1 and 9223372036854775807.")
+        with closing(self.connect()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
+            if row is None:
+                raise AssignmentNotFoundError(f"Assignment ID {assignment_id} was not found; nothing was deleted.")
+            deleted = dict(row)
+            deleted["course"], deleted["title"] = self.decrypt(row["course"]), self.decrypt(row["title"])
+            conn.execute("DELETE FROM assignments WHERE id = ?", (assignment_id,))
+        return {"ok": True, "deleted_assignment": deleted}
+
+    # Read a bounded deadline-ordered selection and decrypt its assignment names.
     def _query(self, start: date, end: date, include_overdue: bool) -> dict:
         with closing(self.connect()) as conn:
             rows = conn.execute(
@@ -149,6 +207,7 @@ class TaskManager:
                 "assignments": assignments, "truncated": len(rows) > 200,
                 "returned_estimated_hours": sum(item["estimated_hours"] for item in assignments)}
 
+    # Validate the date window and retrieve upcoming and optional overdue work.
     def upcoming_assignments(self, days: int = 7, include_overdue: bool = True) -> dict:
         self.limiter.check()
         if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 90:
@@ -159,6 +218,7 @@ class TaskManager:
         # Seven days includes today and the next six calendar dates.
         return self._query(today, today + timedelta(days=days - 1), include_overdue)
 
+    # Build a weekly planning prompt from real assignments and daily capacity.
     def weekly_study_plan(self, daily_hours: str = "2") -> str:
         self.limiter.check()
         try:
