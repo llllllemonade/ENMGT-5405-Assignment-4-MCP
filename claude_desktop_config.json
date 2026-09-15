@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "course-task-manager": {
+      "command": "D:\\Yan\\Cornell\\Semester 1\\ENMGT 5405 Applied AI for Teams\\Assignment 4 MCP\\Submission_English\\GitHub_Repository\\.venv\\Scripts\\python.exe",
+      "args": [
+        "-X",
+        "utf8",
+        "D:\\Yan\\Cornell\\Semester 1\\ENMGT 5405 Applied AI for Teams\\Assignment 4 MCP\\Submission_English\\GitHub_Repository\\server.py",
+        "--env-file",
+        "D:\\Yan\\Cornell\\Semester 1\\ENMGT 5405 Applied AI for Teams\\Assignment 4 MCP\\Submission_English\\GitHub_Repository\\.env"
+      ]
+    }
+  }
+}

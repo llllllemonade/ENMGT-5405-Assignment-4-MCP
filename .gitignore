@@ -1,0 +1,15 @@
+.venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+data/
+*.db
+*.db-*
+Canvas_Submission/
+*.pdf
+*.png
+*.svg
+dist/
