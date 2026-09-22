@@ -1,4 +1,6 @@
 # Course Task Manager MCP Server
+- NetID: jy2283
+- Student Name: Jiaxuan Yan
 
 A local Python MCP server for recording coursework, finding approaching deadlines,
 and preparing a weekly study-plan prompt. It exposes **three tools and one prompt**.
@@ -8,13 +10,13 @@ and preparing a weekly study-plan prompt. It exposes **three tools and one promp
 - Python 3.12 recommended; tested with Python 3.12.14 on Windows x86-64.
 - [uv](https://docs.astral.sh/uv/getting-started/installation/).
 - VS Code or Cursor with the Python extension, for the virtual-environment demonstration.
-- Claude Desktop for the course's required client demonstration.
+- Claude Desktop for the course's required client demonstration. Tested on free plan.
 
 No external API account, API key, hosted VM, Node.js, or network server is required
 by the application. Installing dependencies and using Claude's online model require
 network access. Local unit tests and the protocol demo work offline after installation.
 
-## 1. Create and activate the virtual environment in VS Code or Cursor
+## 1. Create and activate the virtual environment in any terminal
 
 Open **this repository folder**, then open the editor's integrated PowerShell terminal:
 
